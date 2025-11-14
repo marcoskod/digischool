@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: digischool-postgres
+    environment:
+      POSTGRES_DB: digischool
+      POSTGRES_USER: digischool
+      POSTGRES_PASSWORD: digischool_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - digischool-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U digischool"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: digischool-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - digischool-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: digischool-backend
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://digischool:digischool_dev_password@postgres:5432/digischool
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: your-jwt-secret-change-in-production
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - digischool-network
+    command: npm run start:dev
+
+  # Frontend Web App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: digischool-frontend
+    environment:
+      REACT_APP_API_URL: http://localhost:3000
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - digischool-network
+    command: npm start
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  digischool-network:
+    driver: bridge
